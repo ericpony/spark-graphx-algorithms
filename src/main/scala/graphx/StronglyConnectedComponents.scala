@@ -16,6 +16,8 @@ object StronglyConnectedComponents {
    * @param graph the graph for which to compute the SCC
    *
    * @return a graph with vertex attributes containing the smallest vertex id in each SCC
+   *
+   * Source: https://github.com/apache/spark/blob/master/graphx/src/main/scala/org/apache/spark/graphx/lib/StronglyConnectedComponents.scala
    */
   def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED], numIter: Int): Graph[VertexId, ED] = {
 

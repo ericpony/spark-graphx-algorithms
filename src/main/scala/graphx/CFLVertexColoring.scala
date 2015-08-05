@@ -1,8 +1,8 @@
 package graphx
 
-import scala.util.Random
-import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.graphx._
+
+import scala.util.Random
 
 object CFLVertexColoring {
 
@@ -33,8 +33,8 @@ object CFLVertexColoring {
     }
     def vprog (id: VertexId, attr: Palette, active: Boolean): Palette = {
       val color = attr._1
-      val dist  = attr._2
-      val seed  = attr._4
+      val dist = attr._2
+      val seed = attr._4
       val new_dist = dist.foldLeft((1, List[Double]())) {
         case ((i, list), weight) => (i + 1,
           if (active)
@@ -52,7 +52,9 @@ object CFLVertexColoring {
 
 object CFLVertexColoringExample {
 
-  def main(args: Array[String]): Unit = {
+  import org.apache.spark.{SparkConf, SparkContext}
+
+  def main (args: Array[String]): Unit = {
     val sc = new SparkContext(new SparkConf().setAppName("Vertex Coloring Example"))
 
     // construct a complete graph with numVertices vertices
