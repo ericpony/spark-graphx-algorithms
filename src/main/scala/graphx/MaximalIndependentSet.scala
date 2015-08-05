@@ -1,6 +1,5 @@
 package graphx
 
-import scala.reflect.ClassTag
 import scala.util.Random
 
 /**
@@ -14,35 +13,72 @@ object MaximalIndependentSet {
 
   import org.apache.spark.graphx._
 
-  type MISVertex = (Boolean, Random)
-
-  private def initGraph[VD: ClassTag] (graph: Graph[VD, _], isConnected: Boolean): Graph[MISVertex, _] = {
-
-    val seed = Random.nextLong
-    val space = Random.nextInt
-
-    if (isConnected)
-      graph.mapVertices { (vid, _) => (false, new Random(seed + vid * space))}
-    else {
-      // identify the isolated vertices
-      val g = graph.outerJoinVertices[Int, Boolean](graph.outDegrees) {
-        (vid, _, degreeOpt) => !degreeOpt.isDefined
-      }.outerJoinVertices(graph.inDegrees) {
-        (vid, mark, degreeOpt) => !degreeOpt.isDefined && mark
-      }.vertices.filter(_._2)
-
-      // let the isolated vertices point to themselves
-      graph.outerJoinVertices(g) { (vid, data, opt) => (!opt.isDefined, new Random(seed + vid * space))}
-    }
-  }
+  type MISVertex = (VertexState, Double, Random)
+  type VertexState = Int
 
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
   def run (graph: Graph[_, _], numIter: Int = Int.MaxValue, isConnected: Boolean = false): Graph[Boolean, _] = {
-    val misGraph = initGraph(graph, isConnected)
 
-    misGraph.mapVertices((_, data) => data._1)
+    val Unknown = 0
+    val Tentative = 1
+    val Excluded = 2
+    val seed = Random.nextLong
+    val space = Random.nextInt
+    val misGraph = Graph(graph.degrees.map {
+      v => (v._1, (Unknown, 1.0 / (2 * v._2), new Random(seed + v._1 * space)))
+    }, graph.edges)
+
+    Pregel(misGraph, Tentative)(
+      (vid, data, nextState) => (
+        if (nextState == Tentative)
+          if (data._3.nextDouble < data._2) Tentative else Unknown
+        else
+          nextState, data._2, data._3),
+      e => {
+        if (e.srcAttr._1 == Tentative && e.dstAttr._1 == Tentative)
+          Iterator((math.max(e.srcId, e.dstId), Excluded))
+        else if (e.srcAttr._1 == Tentative && e.dstAttr._1 == Unknown)
+          Iterator((e.dstId, Excluded))
+        else if (e.srcAttr._1 == Unknown && e.dstAttr._1 == Tentative)
+          Iterator((e.srcId, Excluded))
+        else if (e.srcAttr._1 == Unknown && e.dstAttr._1 == Unknown)
+          Iterator((e.srcId, Tentative), (e.dstId, Tentative))
+        else
+          Iterator()
+      },
+      math.max(_, _)).mapVertices((_, data) => data._1 == Tentative)
   }
+}
 
+object MaximalIndependentSetExample {
+
+  import org.apache.spark.graphx._
+  import org.apache.spark.{SparkConf, SparkContext}
+
+  def main (args: Array[String]): Unit = {
+
+    val sc = new SparkContext(new SparkConf().setAppName("MSF Example"))
+    val rng = new Random(12345)
+    val numVertices = 50
+
+    // construct an undirected complete graph with `numVertices` vertices
+    val vids: List[Int] = (1 to numVertices).toList
+    val edges = sc.parallelize(vids.flatMap {
+      i => vids.foldLeft(List[Edge[Null]]()) {
+        (list, j) => if (j > i && rng.nextBoolean) list :+ Edge(i, j, null) else list
+      }
+    })
+    println("Undirected edges: ")
+    edges.cache().collect().foreach(e => println(e.srcId + " <---> " + e.dstId))
+
+    val graph = Graph.fromEdges(edges, 0)
+
+    println("Computing a MSF for a " + numVertices + "-clique...")
+    val resGraph = MaximalIndependentSet.run(graph)
+
+    // a vertex's attribute is the vertex id of its parent node in the MSF
+    resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
+  }
 }
