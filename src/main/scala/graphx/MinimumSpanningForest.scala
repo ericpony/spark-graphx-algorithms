@@ -1,26 +1,24 @@
 package graphx
 
-import org.apache.spark.graphx._
-
-object Types {
-  type EdgeWeight = Double
-}
+import scala.reflect.ClassTag
 
 /**
+ * A pregel implementation of a minimum spanning forest algorithm.
+ *
  * Reference:
  * S. Chung and A. Condon. Parallel Implementation of Boruvka’s Minimum Spanning Tree Algorithm.
  * In Proceedings of the International Parallel Processing Symposium, 1996.
  */
 object MinimumSpanningForest extends Logger {
 
-  import scala.reflect.ClassTag
   import graphx.Types._
+  import org.apache.spark.graphx._
 
   private def trimGraph[VD: ClassTag] (graph: Graph[VD, EdgeWeight]): Graph[VertexId, EdgeWeight] = {
 
     // identify the isolated vertices
     val g = graph.outerJoinVertices[Int, Boolean](graph.outDegrees) {
-      (vid, _:VD, degreeOpt) => !degreeOpt.isDefined
+      (vid, _, degreeOpt) => !degreeOpt.isDefined
     }.outerJoinVertices(graph.inDegrees) {
       (vid, mark, degreeOpt) => !degreeOpt.isDefined && mark
     }.vertices.filter(_._2)
@@ -75,6 +73,7 @@ object MinimumSpanningForest extends Logger {
 object MinimumSpanningForestExample {
 
   import graphx.Types._
+  import org.apache.spark.graphx._
   import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.util.Random
