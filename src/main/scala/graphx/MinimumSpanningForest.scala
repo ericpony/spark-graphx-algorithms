@@ -1,6 +1,7 @@
 package graphx
 
 import scala.reflect.ClassTag
+import scala.util.Random
 
 /**
  * A pregel implementation of a minimum spanning forest algorithm.
@@ -75,8 +76,6 @@ object MinimumSpanningForestExample {
   import graphx.Types._
   import org.apache.spark.graphx._
   import org.apache.spark.{SparkConf, SparkContext}
-
-import scala.util.Random
 
   def main (args: Array[String]): Unit = {
 
