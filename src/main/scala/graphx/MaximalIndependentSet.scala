@@ -1,5 +1,6 @@
 package graphx
 
+import scala.reflect.ClassTag
 import scala.util.Random
 
 /**
@@ -19,7 +20,7 @@ object MaximalIndependentSet {
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
-  def run (graph: Graph[_, _], numIter: Int = Int.MaxValue, isConnected: Boolean = false): Graph[Boolean, _] = {
+  def run[VD: ClassTag] (graph: Graph[VD, _], numIter: Int = Int.MaxValue, isConnected: Boolean = false): Graph[Boolean, _] = {
 
     val Unknown = 0
     val Tentative = 1
@@ -30,7 +31,7 @@ object MaximalIndependentSet {
       v => (v._1, (Unknown, 1.0 / (2 * v._2), new Random(seed + v._1 * space)))
     }, graph.edges)
 
-    Pregel(misGraph, Tentative)(
+    val g = Pregel(misGraph, Tentative)(
       (vid, data, nextState) => (
         if (nextState == Tentative)
           if (data._3.nextDouble < data._2) Tentative else Unknown
@@ -48,7 +49,13 @@ object MaximalIndependentSet {
         else
           Iterator()
       },
-      math.max(_, _)).mapVertices((_, data) => data._1 == Tentative)
+      math.max(_, _)).mapVertices {
+      (_, data) => data._1 == Tentative
+    }
+    if (isConnected) g
+    else graph.outerJoinVertices(g.vertices) {
+      (_, _, opt) => opt.getOrElse(true)
+    }
   }
 }
 
