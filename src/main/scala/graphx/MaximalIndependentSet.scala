@@ -78,15 +78,13 @@ object MaximalIndependentSetExample {
         (list, j) => if (j > i && rng.nextBoolean) list :+ Edge(i, j, null) else list
       }
     })
-    println("Undirected edges: ")
-    edges.cache().collect().foreach(e => println(e.srcId + " <---> " + e.dstId))
 
     val graph = Graph.fromEdges(edges, 0)
 
-    println("Computing a MSF for a " + numVertices + "-clique...")
+    // println("Computing a MSF for a " + numVertices + "-clique...")
     val resGraph = MaximalIndependentSet(graph)
 
     // a vertex's attribute is the vertex id of its parent node in the MSF
-    resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
+    // resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
   }
 }
