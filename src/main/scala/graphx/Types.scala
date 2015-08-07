@@ -1,6 +1,6 @@
 package graphx
 
 object Types {
-  type Color = Int
+  type Color = Long
   type EdgeWeight = Double
 }

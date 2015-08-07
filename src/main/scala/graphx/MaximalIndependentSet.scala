@@ -20,8 +20,9 @@ object MaximalIndependentSet {
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
-  def run[VD: ClassTag] (graph: Graph[VD, _], numIter: Int = Int.MaxValue, isConnected: Boolean = false): Graph[Boolean, _] = {
-
+  def apply[VD: ClassTag] (graph: Graph[VD, _],
+                           numIter: Int = Int.MaxValue,
+                           isConnected: Boolean = false): Graph[Boolean, _] = {
     val Unknown = 0
     val Tentative = 1
     val Excluded = 2
@@ -83,7 +84,7 @@ object MaximalIndependentSetExample {
     val graph = Graph.fromEdges(edges, 0)
 
     println("Computing a MSF for a " + numVertices + "-clique...")
-    val resGraph = MaximalIndependentSet.run(graph)
+    val resGraph = MaximalIndependentSet(graph)
 
     // a vertex's attribute is the vertex id of its parent node in the MSF
     resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))

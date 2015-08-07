@@ -15,28 +15,15 @@ object MinimumSpanningForest extends Logger {
   import graphx.Types._
   import org.apache.spark.graphx._
 
-  private def trimGraph[VD: ClassTag] (graph: Graph[VD, EdgeWeight]): Graph[VertexId, EdgeWeight] = {
-
-    // identify the isolated vertices
-    val g = graph.outerJoinVertices[Int, Boolean](graph.outDegrees) {
-      (vid, _, degreeOpt) => !degreeOpt.isDefined
-    }.outerJoinVertices(graph.inDegrees) {
-      (vid, mark, degreeOpt) => !degreeOpt.isDefined && mark
-    }.vertices.filter(_._2)
-
-    // let the isolated vertices point to themselves
-    graph.outerJoinVertices(g) { (vid, data, opt) => if (opt.isDefined) 0 else vid}
-  }
-
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
-  def run (graph: Graph[_, EdgeWeight], numIter: Int = Int.MaxValue, isConnected: Boolean = false): Graph[VertexId, EdgeWeight] = {
-
-    val msfGraph = (if (isConnected) graph else trimGraph(graph)).cache()
+  def apply[VD: ClassTag] (graph: Graph[VD, EdgeWeight],
+                           numIter: Int = Int.MaxValue,
+                           isConnected: Boolean = false): Graph[VertexId, EdgeWeight] = {
 
     // a vertex's attribute is the id of the other vertex at its minimal incident edge
-    val vRDD = msfGraph.aggregateMessages[(VertexId, EdgeWeight)](
+    val vRDD = graph.aggregateMessages[(VertexId, EdgeWeight)](
     ctx => ctx.sendToSrc((ctx.dstId, ctx.attr)), {
       case ((v1, w1), (v2, w2)) =>
         if (w1 > w2) (v2, w2) else (v1, w1)
@@ -54,7 +41,7 @@ object MinimumSpanningForest extends Logger {
     info("=====")
 
     // identify the super vertex in each tree
-    Graph(superVertexGraph.aggregateMessages[VertexId](
+    val msfGraph = Graph(superVertexGraph.aggregateMessages[VertexId](
       ctx => {
         if (ctx.dstId == ctx.srcAttr && ctx.dstAttr == ctx.srcId) {
           // detect a 2-cycle
@@ -66,8 +53,27 @@ object MinimumSpanningForest extends Logger {
           ctx.sendToDst(ctx.dstAttr)
           ctx.sendToSrc(ctx.srcAttr)
         }
-      }, (vid1, vid2) => math.min(vid1, vid2)
+      },
+      (vid1, vid2) => math.min(vid1, vid2)
     ), graph.edges)
+
+    if(isConnected) msfGraph
+    else graph.outerJoinVertices(msfGraph.vertices) {
+      (vid, data, opt) => opt.getOrElse(vid)
+    }
+  }
+
+  private def trimGraph[VD: ClassTag] (graph: Graph[VD, EdgeWeight]): Graph[VertexId, EdgeWeight] = {
+
+    // identify the isolated vertices
+    val g = graph.outerJoinVertices[Int, Boolean](graph.outDegrees) {
+      (vid, _, degreeOpt) => !degreeOpt.isDefined
+    }.outerJoinVertices(graph.inDegrees) {
+      (vid, mark, degreeOpt) => !degreeOpt.isDefined && mark
+    }.vertices.filter(_._2)
+
+    // let the isolated vertices point to themselves
+    graph.outerJoinVertices(g) { (vid, data, opt) => if (opt.isDefined) 0 else vid}
   }
 }
 
@@ -100,7 +106,7 @@ object MinimumSpanningForestExample {
     val graph = Graph.fromEdges(edges, 0)
 
     println("Computing a MSF for a " + numVertices + "-clique...")
-    val resGraph = MinimumSpanningForest.run(graph)
+    val resGraph = MinimumSpanningForest(graph)
 
     // a vertex's attribute is the vertex id of its parent node in the MSF
     resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))

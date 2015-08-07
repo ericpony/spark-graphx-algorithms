@@ -1,7 +1,17 @@
 package graphx
 
+import scala.reflect.ClassTag
 import scala.util.Random
 
+/**
+ * A pregel implementation of a randomized graph coloring algorithm.
+ * This algorithm finds a proper coloring in exponential time with high probability,
+ * given that a coloring does exists.
+ *
+ * Reference:
+ * Leith, D. J., and P. Clifford. "Convergence of Distributed Learning Algorithms
+ * for Optimal Wireless Channel Allocation." IEEE Conference on Decision and Control, 2006.
+ */
 object CFLVertexColoring {
 
   import graphx.Types._
@@ -9,7 +19,7 @@ object CFLVertexColoring {
 
   type Palette = (Color, List[Double], Boolean, Random)
 
-  private def sampleColor (dist: List[Double], rnd: Double): Int = {
+  private def sampleColor (dist: List[Double], rnd: Double): Color = {
     dist.foldLeft((1, 0.0)) {
       case ((color, mass), weight) => {
         val m = mass + weight
@@ -18,12 +28,19 @@ object CFLVertexColoring {
     }._1
   }
 
-  def run (graph: Graph[Color, _], beta: Double, maxNumColors: Int): Graph[Color, _] = {
+  def apply[VD: ClassTag] (graph: Graph[VD, _],
+                           beta: Double,
+                           maxNumColors: Long, // Colors are values between 1 and maxNumColors
+                           numIter: Int = Int.MaxValue,
+                           isConnected: Boolean = false): Graph[Color, _] = {
 
     val seed = Random.nextLong
     val space = Random.nextInt
-    val initColorDist = (1 to maxNumColors).toList.map(_ => 1.0 / maxNumColors)
-    val distGraph = graph.mapVertices((id, attr) => (attr, initColorDist, true, new Random(seed + id * space)))
+    val initColorDist = (1L to maxNumColors).toList.map(_ => 1.0 / maxNumColors)
+    val distGraph = graph.mapVertices((id, attr) => {
+      val rng = new Random(seed + id * space)
+      (rng.nextLong % maxNumColors + 1, initColorDist, true, rng)
+    })
 
     def sendMessage (edge: EdgeTriplet[Palette, _]): Iterator[(VertexId, Boolean)] = {
       if (edge.srcAttr._1 == edge.dstAttr._1)
@@ -46,7 +63,11 @@ object CFLVertexColoring {
       val new_color = if (active) sampleColor(new_dist, rng.nextDouble) else color
       (new_color, new_dist, active, rng)
     }
-    Pregel(distGraph, true, activeDirection = EdgeDirection.Either)(vprog, sendMessage, _ || _).mapVertices((_, attr) => attr._1)
+    val colorGraph = Pregel(distGraph, true)(vprog, sendMessage, _ || _).mapVertices((_, attr) => attr._1)
+    if (isConnected)
+      colorGraph
+    else
+      graph.outerJoinVertices(colorGraph.vertices)((vid, _, opt) => opt.getOrElse(1))
   }
 }
 
@@ -61,7 +82,7 @@ object CFLVertexColoringExample {
 
     // construct a complete graph with numVertices vertices
     val numVertices = 9
-    val vids: List[Color] = (1 to numVertices).toList
+    val vids: List[Color] = (1L to numVertices).toList
     val edges = sc.parallelize(vids.flatMap {
       i => vids.foldLeft(List[Edge[Null]]()) {
         (list, j) => if (j != i) list :+ Edge(i, j, null) else list
@@ -72,7 +93,7 @@ object CFLVertexColoringExample {
 
     println("Finding a vertex coloring for a " + numVertices + "-clique...")
 
-    val resGraph = CFLVertexColoring.run(graph, 0.5, numVertices)
+    val resGraph = CFLVertexColoring(graph, 0.5, numVertices)
     resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
   }
 }

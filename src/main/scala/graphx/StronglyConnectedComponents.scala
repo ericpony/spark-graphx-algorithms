@@ -1,7 +1,8 @@
 package graphx
 
-import scala.reflect.ClassTag
 import org.apache.spark.graphx._
+
+import scala.reflect.ClassTag
 
 /** Strongly connected components algorithm implementation. */
 object StronglyConnectedComponents {
@@ -17,14 +18,14 @@ object StronglyConnectedComponents {
    *
    * @return a graph with vertex attributes containing the smallest vertex id in each SCC
    *
-   * Source: https://github.com/apache/spark/blob/master/graphx/src/main/scala/org/apache/spark/graphx/lib/StronglyConnectedComponents.scala
+   *         Source: https://github.com/apache/spark/blob/master/graphx/src/main/scala/org/apache/spark/graphx/lib/StronglyConnectedComponents.scala
    */
-  def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED], numIter: Int): Graph[VertexId, ED] = {
+  def apply[VD: ClassTag, ED: ClassTag] (graph: Graph[VD, ED], numIter: Int): Graph[VertexId, ED] = {
 
     // the graph we update with final SCC ids, and the graph we return at the end
-    var sccGraph = graph.mapVertices { case (vid, _) => vid }
+    var sccGraph = graph.mapVertices { case (vid, _) => vid}
     // graph we are going to work with in our iterations
-    var sccWorkGraph = graph.mapVertices { case (vid, _) => (vid, false) }.cache()
+    var sccWorkGraph = graph.mapVertices { case (vid, _) => (vid, false)}.cache()
     var numVertices = sccWorkGraph.numVertices
     var iter = 0
     while (sccWorkGraph.numVertices > 0 && iter < numIter) {
@@ -42,7 +43,7 @@ object StronglyConnectedComponents {
           (vid, data, degreeOpt) => if (degreeOpt.isDefined) data else (vid, true)
         }.cache()
 
-        // get all trivial SCCs to be removed
+        // get the colors of all trivial SCCs
         val finalVertices = sccWorkGraph.vertices
           .filter { case (vid, (scc, isFinal)) => isFinal}
           .mapValues { (vid, data) => data._1}
@@ -58,7 +59,7 @@ object StronglyConnectedComponents {
       } while (sccWorkGraph.numVertices < numVertices) // repeat until no trivial SCCs are left
 
       // reset the color of each vertex to itself
-      sccWorkGraph = sccWorkGraph.mapVertices{ case (vid, (color, isFinal)) => (vid, isFinal) }
+      sccWorkGraph = sccWorkGraph.mapVertices { case (vid, (color, isFinal)) => (vid, isFinal)}
 
       // collect min of all my neighbor's scc values, update if it's smaller than mine
       // then notify any neighbors with scc values larger than mine
