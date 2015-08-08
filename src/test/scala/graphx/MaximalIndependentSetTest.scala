@@ -9,41 +9,54 @@ import scala.util.Random
 
 class MaximalIndependentSetTest extends FlatSpec {
 
-  val sc = new SparkContext("local", "Maximal Independent Set Test")
+  val numTests: Int = 10
+  val scale: Int = 10
+  val sc = new SparkContext("local", "Minimal Spanning Forest Test")
 
-  def checkMIS (graph: Graph[Boolean, _]) = {
-    // for each vertex, count the number of selected neighbors
-    graph.outerJoinVertices(graph.aggregateMessages[Long](
-      ctx => {
-        if (ctx.srcAttr) ctx.sendToDst(1)
-        if (ctx.dstAttr) ctx.sendToDst(1)
-      },
-      _ + _
-    )) {
-      (vid, selected, opt) => {
-        Predef.assert(!selected && !opt.isDefined, "isolated vertex not selected")
-        Predef.assert(selected && opt.getOrElse(0L) > 0, "not independent")
-        Predef.assert(!selected && opt.get == 0, "not maximal")
-      }
-    }.unpersist()
-  }
+  var graph: Graph[_, _] = _
+  var message: String = _
+  var haveFailed = false
 
   "An MIS of a random graph" should "be maximum and independent" in {
-    val rng = new Random(12345)
-    1 to 10 foreach { n =>
-      val graph = MyGraphGenerators.randomGraph(sc, 10 * n, (_, _) => rng.nextBoolean, 0, (_, _) => null)
-      val misGraph = MaximalIndependentSet(graph)
-      checkMIS(misGraph)
-      graph.unpersist()
-      misGraph.unpersist()
+    1 to numTests foreach { n =>
+      if (!haveFailed) {
+        val seed = Random.nextInt()
+        val rng = new Random(seed)
+        graph = MyGraphGenerators.randomGraph(sc, scale * n * n, (_, _) => rng.nextBoolean, 0, (_, _) => null)
+        message = "Random graph test #" + n + ": " + graph.vertices.count() + " vertices, " + graph.edges.count() + " edges, seed = " + seed
+        test
+      }
     }
   }
 
   "An MIS of a grid graph" should "be maximum and independent" in {
-    1 to 10 foreach { n =>
-      val graph = GraphGenerators.gridGraph(sc, 10 * n, 10 * n)
-      val misGraph = MaximalIndependentSet(graph)
-      checkMIS(misGraph)
+    1 to numTests foreach { n =>
+      if (!haveFailed) {
+        graph = GraphGenerators.gridGraph(sc, scale * n, scale * n)
+        message = "Grid graph test #" + n + ": " + graph.vertices.count() + " vertices, " + graph.edges.count() + " edges. "
+        test
+      }
+    }
+  }
+
+  def test = {
+    println(message)
+    val misGraph = MaximalIndependentSet(graph)
+    println("An MIS with size " + misGraph.vertices.filter(v => v._2).count() + " is found.\n")
+    val bugs = MaximalIndependentSet.findInvalidVertices(misGraph, 5)
+    if (bugs.length > 0) {
+      bugs.foreach(v => println("[Bug] V" + +v._1 + ": " + v._2))
+      misGraph.mapTriplets(e => {
+        var src = "V" + e.srcId
+        var dst = "V" + e.dstId
+        if (e.srcAttr) src = "(" + src + ")"
+        if (e.dstAttr) dst = "(" + dst + ")"
+        src + " <---> " + dst
+      }).edges.collect().foreach(e => println(e.attr))
+      haveFailed = true
+      fail()
+      sc.stop()
+    } else {
       graph.unpersist()
       misGraph.unpersist()
     }
