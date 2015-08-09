@@ -6,7 +6,7 @@ import scala.reflect.ClassTag
 import scala.util.Random
 
 /**
- * A pregel implementation of a randomized greedy maximal independent set algorithm.
+ * A pregel implementation of a randomized maximal independent set algorithm.
  *
  * Author:
  * ericpony (https://github.com/ericpony/graphx-examples)
@@ -18,26 +18,23 @@ import scala.util.Random
 object MaximalIndependentSet {
   type VertexState = Int
 
-  /**
-   * Remark: the input graph will be treated as an undirected graph.
-   */
+  /* Note that edges in the input graph are treated as undirected */
   def apply[VD: ClassTag, ED: ClassTag] (graph: Graph[VD, ED],
                                          maxNumIterations: Int = Int.MaxValue,
                                          isConnected: Boolean = false): Graph[Boolean, ED] = {
-    val rng = new Random(54321) // for debug purpose
     val Unknown = 0
     val Selected = 1
     val Excluded = 2
-    val seed = rng.nextLong
-    val space = rng.nextInt
+    val seed = Random.nextLong
+    val space = Random.nextInt
     var numIterations = 0L
 
-    // select all vertices at the beginning
+    // all vertices are in the candidate MIS at the beginning
     var misGraph = graph.mapVertices((_, _) => true)
 
-    // compute working graph with vertex attribute: (status, probability, RNG)
+    // compute working graph, which has vertex attributes as (status, probability, RNG)
     var misWorkGraph = {
-      // remove isolated vertices from the working graph
+      // remove the isolated vertices from working graph
       val g = graph.outerJoinVertices(graph.degrees) {
         (vid, data, deg) => deg.getOrElse(0)
       }
@@ -46,22 +43,26 @@ object MaximalIndependentSet {
       (vid, deg) => (Unknown, 1.0 / (2 * deg), new Random(seed + vid * space))
     }.cache()
 
+    // Counting edges instead of vertices help us avoid
+    // some unnecessary iterations in the main loop.
     var numEdges = misWorkGraph.numEdges
 
     while (numEdges > 0 && numIterations < maxNumIterations) {
       numIterations = numIterations + 1
 
-      // select each Unknown vertex randomly
+      // mark each Unknown vertex as Selected randomly
       misWorkGraph = misWorkGraph.mapVertices {
         (v, data) =>
-          // make decision according to current probability
+          // make decision by tossing a coin of head probability 1/(2*deg(v))
           val nextState = if (data._3.nextDouble < data._2) Selected else Unknown
           (nextState, data._2, data._3)
       }.cache()
 
-      // set the neighbors of the Selected vertices to Unknown
+      // mark the neighbors of each Selected vertex as Unknown
       misWorkGraph = misWorkGraph.joinVertices(misWorkGraph.aggregateMessages[VertexState](
         e => {
+          // note that we cannot exclude vertices at this stage,
+          // for otherwise we are likely to exclude too many vertices
           if (e.srcAttr._1 == Selected && e.dstAttr._1 == Selected)
             (if (e.srcId < e.dstId) e.sendToDst _ else e.sendToSrc _)(Unknown)
         },
@@ -70,7 +71,7 @@ object MaximalIndependentSet {
         (vid, attr, state) => (state, attr._2, attr._3)
       }
 
-      // identify the vertices to exclude, i.e., vertices near Selected vertices
+      // identify the vertices to exclude, i.e., the vertices near Selected vertices
       val exVertices = misWorkGraph.aggregateMessages[VertexState](
         e => {
           if (e.srcAttr._1 == Selected && e.dstAttr._1 == Unknown)
@@ -78,11 +79,11 @@ object MaximalIndependentSet {
           else if (e.srcAttr._1 == Unknown && e.dstAttr._1 == Selected)
             e.sendToSrc(Excluded)
         },
-        math.max(_, _)
+        (_, s) => s
       ).filter(_._2 == Excluded).cache()
 
       if (exVertices.count() > 0) {
-        // update base graph according to the excluded vertices
+        // remove Excluded vertices from the candidate MIS
         misGraph = misGraph.joinVertices(exVertices)((_, _, _) => false)
 
         // keep non-isolated Unknown vertices in working graph
@@ -90,12 +91,13 @@ object MaximalIndependentSet {
           g => {
             g.outerJoinVertices(g.aggregateMessages[Boolean](
               e => {
-                // decide whether to remove a vertex or not
+                // remove Selected vertices and their neighbors from working graph
                 val remove = e.srcAttr._1 == Selected || e.dstAttr._1 == Selected
                 e.sendToDst(remove)
                 e.sendToSrc(remove)
               }, _ || _
             )) {
+              // remove the vertices that didn't receive any messages
               (_, _, b) => b.getOrElse(true)
             }
           },
@@ -107,16 +109,19 @@ object MaximalIndependentSet {
           (vid, attr, deg) => (Unknown, 1.0 / (2 * deg), attr._3)
         }.cache()
 
-        // stop if no Unknown vertices are left
+        // stop if there are no adjacent Unknown vertices in working graph
         numEdges = misWorkGraph.numEdges
       }
     }
-    // eventually, all vertices in the working graph are excluded
+    // Eventually, all vertices near Selected vertices are Excluded from working graph.
+    // Since we put all vertices in MIS at the beginning, the final MIS includes exactly
+    // the Selected vertices and the Unknown vertices left after the loop terminated.
     misGraph
   }
 
+  /* Find invalid vertices in the provided MIS graph and return descriptive error messages */
   def findInvalidVertices (graph: Graph[Boolean, _], maxNumMessages: Int = 1): Array[(VertexId, String)] = {
-    // for each vertex, count the number of selected neighbors
+    // for each vertex, count the number of Selected neighbors
     graph.outerJoinVertices(graph.aggregateMessages[Long](
       ctx => {
         ctx.sendToDst(if (ctx.srcAttr) 1 else 0)
@@ -126,12 +131,13 @@ object MaximalIndependentSet {
     )) {
       (vid, selected, opt) => {
         if (!selected && !opt.isDefined) "isolated vertex not selected"
-        else if (selected && opt.getOrElse(0L) > 0) "not independent"
         else if (!selected && opt.get == 0) "not maximal"
+        else if (selected && opt.getOrElse(0L) > 0) "not independent"
         else null
       }
     }.vertices.filter(v => v._2 != null).take(maxNumMessages)
   }
 
+  /* Verify the provided MIS graph */
   def verify (graph: Graph[Boolean, _]): Boolean = findInvalidVertices(graph).length == 0
 }
