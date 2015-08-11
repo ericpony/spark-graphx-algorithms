@@ -102,7 +102,7 @@ object MaximalIndependentSet {
             }
           },
           vpred = (_, b) => !b
-        ).cache()
+        )
 
         // update probabilities according to new degrees
         misWorkGraph = misWorkGraph.joinVertices(misWorkGraph.degrees) {

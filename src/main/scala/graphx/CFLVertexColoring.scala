@@ -69,31 +69,21 @@ object CFLVertexColoring {
     else
       graph.outerJoinVertices(colorGraph.vertices)((vid, _, opt) => opt.getOrElse(1))
   }
-}
 
-object CFLVertexColoringExample {
-
-  import graphx.Types._
-  import org.apache.spark.graphx._
-  import org.apache.spark.{SparkConf, SparkContext}
-
-  def main (args: Array[String]): Unit = {
-    val sc = new SparkContext(new SparkConf().setAppName("Vertex Coloring Example"))
-
-    // construct a complete graph with numVertices vertices
-    val numVertices = 9
-    val vids: List[Color] = (1L to numVertices).toList
-    val edges = sc.parallelize(vids.flatMap {
-      i => vids.foldLeft(List[Edge[Null]]()) {
-        (list, j) => if (j != i) list :+ Edge(i, j, null) else list
-      }
-    })
-    // all vertices have Color = 1 at the beginning
-    val graph: Graph[Color, Null] = Graph.fromEdges(edges, defaultValue = 1)
-
-    println("Finding a vertex coloring for a " + numVertices + "-clique...")
-
-    val resGraph = CFLVertexColoring(graph, 0.5, numVertices)
-    resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
+  def findInvalidEdges[ED: ClassTag] (graph: Graph[Color, ED],
+                                      maxNumColors: Long,
+                                      maxNumMessages: Int = 1): Seq[String] = {
+    graph.mapTriplets[String]((e: EdgeTriplet[Color, ED]) =>
+      if (e.srcAttr == e.dstAttr)
+        "Vertex " + e.srcId + " and Vertex " + e.dstId + " share the same color " + e.srcAttr
+      else if (e.srcAttr > maxNumColors)
+        "Vertex " + e.srcId + " has invalid color: " + e.srcAttr
+      else if (e.dstAttr > maxNumColors)
+        "Vertex " + e.dstId + " has invalid color: " + e.dstAttr
+      else ""
+    ).edges.filter(e => e.attr != "").map(e => e.attr).take(maxNumMessages)
   }
+
+  def verify (graph: Graph[Color, _], maxNumColors: Long): Boolean =
+    findInvalidEdges(graph, maxNumColors).size == 0
 }

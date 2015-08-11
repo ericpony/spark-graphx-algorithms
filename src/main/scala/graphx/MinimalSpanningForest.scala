@@ -1,26 +1,28 @@
 package graphx
 
+import graphx.Types._
+import org.apache.spark.graphx._
+
 import scala.reflect.ClassTag
-import scala.util.Random
 
 /**
- * A pregel implementation of a minimum spanning forest algorithm.
+ * A pregel implementation of a minimal spanning forest algorithm.
+ *
+ * Author:
+ * ericpony (https://github.com/ericpony/graphx-examples)
  *
  * Reference:
  * S. Chung and A. Condon. Parallel Implementation of Boruvka’s Minimum Spanning Tree Algorithm.
  * In Proceedings of the International Parallel Processing Symposium, 1996.
  */
-object MinimumSpanningForest extends Logger {
-
-  import graphx.Types._
-  import org.apache.spark.graphx._
+object MinimalSpanningForest extends Logger {
 
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
   def apply[VD: ClassTag] (graph: Graph[VD, EdgeWeight],
-                           numIter: Int = Int.MaxValue,
-                           isConnected: Boolean = false): Graph[VertexId, EdgeWeight] = {
+                           maxNumIterations: Int = Int.MaxValue,
+                           isConnected: Boolean = false): Graph[(VertexId, VertexId), Boolean] = {
 
     // a vertex's attribute is the id of the other vertex at its minimal incident edge
     val vRDD = graph.aggregateMessages[(VertexId, EdgeWeight)](
@@ -41,7 +43,7 @@ object MinimumSpanningForest extends Logger {
     info("=====")
 
     // identify the super vertex in each tree
-    val msfGraph = Graph(superVertexGraph.aggregateMessages[VertexId](
+    val g = Graph(superVertexGraph.aggregateMessages[VertexId](
       ctx => {
         if (ctx.dstId == ctx.srcAttr && ctx.dstAttr == ctx.srcId) {
           // detect a 2-cycle
@@ -57,58 +59,30 @@ object MinimumSpanningForest extends Logger {
       (vid1, vid2) => math.min(vid1, vid2)
     ), graph.edges)
 
-    if(isConnected) msfGraph
-    else graph.outerJoinVertices(msfGraph.vertices) {
-      (vid, data, opt) => opt.getOrElse(vid)
-    }
-  }
-
-  private def trimGraph[VD: ClassTag] (graph: Graph[VD, EdgeWeight]): Graph[VertexId, EdgeWeight] = {
-
-    // identify the isolated vertices
-    val g = graph.outerJoinVertices[Int, Boolean](graph.outDegrees) {
-      (vid, _, degreeOpt) => !degreeOpt.isDefined
-    }.outerJoinVertices(graph.inDegrees) {
-      (vid, mark, degreeOpt) => !degreeOpt.isDefined && mark
-    }.vertices.filter(_._2)
-
-    // let the isolated vertices point to themselves
-    graph.outerJoinVertices(g) { (vid, data, opt) => if (opt.isDefined) 0 else vid}
-  }
-}
-
-object MinimumSpanningForestExample {
-
-  import graphx.Types._
-  import org.apache.spark.graphx._
-  import org.apache.spark.{SparkConf, SparkContext}
-
-  def main (args: Array[String]): Unit = {
-
-    val sc = new SparkContext(new SparkConf().setAppName("MSF Example"))
-    val rng = new Random(12345)
-    val numVertices = 10
-
-    // construct an undirected complete graph with `numVertices` vertices
-    val vids: List[Int] = (1 to numVertices).toList
-    val edges = sc.parallelize(vids.flatMap {
-      i => vids.foldLeft(List[Edge[EdgeWeight]]()) {
-        (list, j) => {
-          val w = rng.nextInt(10) * 1.0
-          if (j > i) list :+ Edge(i, j, w)
-          else list
-        }
+    val msfGraph = {
+      if (isConnected) g
+      else graph.outerJoinVertices(g.vertices) {
+        (vid, data, opt) => opt.getOrElse(vid)
       }
-    })
-    println("Undirected edges: ")
-    edges.cache().collect().foreach(e => println(e.srcId + " <-- " + e.attr + " --> " + e.dstId))
-
-    val graph = Graph.fromEdges(edges, 0)
-
-    println("Computing a MSF for a " + numVertices + "-clique...")
-    val resGraph = MinimumSpanningForest(graph)
-
-    // a vertex's attribute is the vertex id of its parent node in the MSF
-    resGraph.vertices.collect().foreach(v => println("Vertex(" + v._1 + ", " + v._2 + ")"))
+    }.mapVertices[(VertexId, VertexId)] {
+      (vid, parent) => (if (parent == vid) vid else -1, parent)
+    }.mapTriplets {
+      e => e.srcAttr._2 == e.dstId || e.dstAttr._2 == e.srcId
+    }
+    Pregel(msfGraph, -1L)(
+      (vid, attr, cid) => (if (cid > 0) cid else attr._1, attr._2),
+      e => {
+        if (e.attr) {
+          if (e.dstAttr._2 == e.srcId && e.srcAttr._1 > 0 && e.dstAttr._1 < 0)
+            Iterator((e.dstId, e.srcAttr._1))
+          else if (e.srcAttr._2 == e.dstId && e.srcAttr._1 < 0 && e.dstAttr._1 > 0)
+            Iterator((e.srcId, e.dstAttr._1))
+          else if (e.srcAttr._1 < 0 || e.dstAttr._1 < 0)
+            Iterator((e.srcId, -1L), (e.dstId, -1L))
+        }
+        Iterator()
+      },
+      (a, _) => a
+    )
   }
 }
