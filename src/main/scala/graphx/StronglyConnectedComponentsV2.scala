@@ -5,7 +5,7 @@ import org.apache.spark.graphx._
 import scala.reflect.ClassTag
 
 /** Strongly connected components algorithm implementation. */
-object StronglyConnectedComponents {
+object StronglyConnectedComponentsV2 {
 
   /**
    * Compute the strongly connected component (SCC) of each vertex and return a graph with the
@@ -30,10 +30,12 @@ object StronglyConnectedComponents {
         numVertices = sccWorkGraph.numVertices
 
         // identify the vertices without incoming or outgoing edges
-        sccWorkGraph = sccWorkGraph.outerJoinVertices(sccWorkGraph.outDegrees) {
-          (vid, data, degreeOpt) => if (degreeOpt.isDefined) data else (vid, true)
-        }.outerJoinVertices(sccWorkGraph.inDegrees) {
-          (vid, data, degreeOpt) => if (degreeOpt.isDefined) data else (vid, true)
+        sccWorkGraph = sccWorkGraph.outerJoinVertices(
+          sccWorkGraph.outDegrees.fullOuterJoin(sccWorkGraph.inDegrees).mapValues {
+            case ((opt1, opt2)) => !opt1.isDefined || !opt2.isDefined
+          }
+        ) {
+          (vid, data, isFinal) => (vid, isFinal.isDefined)
         }.cache()
 
         // get the colors of all trivial SCCs
