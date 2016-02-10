@@ -20,7 +20,7 @@ class MaximalIndependentSetTest extends FlatSpec {
       if (!haveFailed) {
         val seed = Random.nextInt()
         val rng = new Random(seed)
-        val graph = Util.genERGraph(sc, scale * n * n, (_, _) => rng.nextBoolean, 0, (_, _) => null)
+        val graph = Utility.genERGraph(sc, scale * n * n, (_, _) => rng.nextBoolean, 0, (_, _) => null)
         val message = s"Random graph test #${n}: ${graph.vertices.count()} vertices, ${graph.edges.count()} edges, seed = ${seed}"
         test(graph, message)
       }

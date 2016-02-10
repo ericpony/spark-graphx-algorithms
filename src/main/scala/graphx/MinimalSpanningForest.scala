@@ -20,9 +20,11 @@ object MinimalSpanningForest extends Logger {
   /**
    * Remark: the input graph will be treated as an undirected graph.
    */
-  def apply[VD: ClassTag] (graph: Graph[VD, EdgeWeight],
-                           maxNumIterations: Int = Int.MaxValue,
-                           isConnected: Boolean = false): Graph[(VertexId, VertexId), Boolean] = {
+  def apply[VD : ClassTag] (
+    graph : Graph[VD, EdgeWeight],
+    maxNumIterations : Int = Int.MaxValue,
+    isConnected : Boolean = false
+    ) : Graph[(VertexId, VertexId), Boolean] = {
 
     // a vertex's attribute is the id of the other vertex at its minimal incident edge
     val vRDD = graph.aggregateMessages[(VertexId, EdgeWeight)](
@@ -36,7 +38,7 @@ object MinimalSpanningForest extends Logger {
     info("=====")
 
     // each vertex attribute containts the vertex id of its parent node in a conjoined tree
-    val superVertexGraph = Graph(vRDD.mapValues[VertexId]((v: (VertexId, EdgeWeight)) => v._1), graph.edges)
+    val superVertexGraph = Graph(vRDD.mapValues[VertexId]((v : (VertexId, EdgeWeight)) => v._1), graph.edges)
 
     info("=== after identifying super-vertices ===")
     superVertexGraph.vertices.collect().foreach(v => info("Vertex(" + v._1 + ", " + v._2 + ")"))

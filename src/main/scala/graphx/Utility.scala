@@ -1,7 +1,7 @@
 package graphx
 
 import org.apache.spark.SparkContext
-import org.apache.spark.graphx.{EdgeRDD, Edge, Graph, VertexId}
+import org.apache.spark.graphx._
 
 import scala.reflect.ClassTag
 

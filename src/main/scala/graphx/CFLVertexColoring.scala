@@ -19,7 +19,7 @@ object CFLVertexColoring {
 
   type Palette = (Color, List[Double], Boolean, Random)
 
-  private def sampleColor (dist: List[Double], rnd: Double): Color = {
+  private def sampleColor (dist : List[Double], rnd : Double) : Color = {
     dist.foldLeft((1, 0.0)) {
       case ((color, mass), weight) => {
         val m = mass + weight
@@ -28,12 +28,13 @@ object CFLVertexColoring {
     }._1
   }
 
-  def apply[VD: ClassTag] (graph: Graph[VD, _],
-                           beta: Double,
-                           maxNumColors: Long, // Colors are values between 1 and maxNumColors
-                           numIter: Int = Int.MaxValue,
-                           isConnected: Boolean = false): Graph[Color, _] = {
-
+  def apply[VD : ClassTag] (
+    graph : Graph[VD, _],
+    beta : Double,
+    maxNumColors : Long, // Colors are values between 1 and maxNumColors
+    numIter : Int = Int.MaxValue,
+    isConnected : Boolean = false
+    ) : Graph[Color, _] = {
     val seed = Random.nextLong
     val space = Random.nextInt
     val initColorDist = (1L to maxNumColors).toList.map(_ => 1.0 / maxNumColors)
@@ -42,14 +43,14 @@ object CFLVertexColoring {
       (rng.nextLong % maxNumColors + 1, initColorDist, true, rng)
     })
 
-    def sendMessage (edge: EdgeTriplet[Palette, _]): Iterator[(VertexId, Boolean)] = {
+    def sendMessage (edge : EdgeTriplet[Palette, _]) : Iterator[(VertexId, Boolean)] = {
       if (edge.srcAttr._1 == edge.dstAttr._1)
         return Iterator((edge.srcId, true))
       if (edge.srcAttr._3)
         return Iterator((edge.srcId, false))
       Iterator.empty
     }
-    def vprog (id: VertexId, attr: Palette, active: Boolean): Palette = {
+    def vprog (id : VertexId, attr : Palette, active : Boolean) : Palette = {
       val color = attr._1
       val dist = attr._2
       val rng = attr._4
@@ -70,10 +71,12 @@ object CFLVertexColoring {
       graph.outerJoinVertices(colorGraph.vertices)((vid, _, opt) => opt.getOrElse(1))
   }
 
-  def findInvalidEdges[ED: ClassTag] (graph: Graph[Color, ED],
-                                      maxNumColors: Long,
-                                      maxNumMessages: Int = 1): Seq[String] = {
-    graph.mapTriplets[String]((e: EdgeTriplet[Color, ED]) =>
+  def findInvalidEdges[ED : ClassTag] (
+    graph : Graph[Color, ED],
+    maxNumColors : Long,
+    maxNumMessages : Int = 1
+    ) : Seq[String] = {
+    graph.mapTriplets[String]((e : EdgeTriplet[Color, ED]) =>
       if (e.srcAttr == e.dstAttr)
         "Vertex " + e.srcId + " and Vertex " + e.dstId + " share the same color " + e.srcAttr
       else if (e.srcAttr > maxNumColors)
@@ -84,6 +87,6 @@ object CFLVertexColoring {
     ).edges.filter(e => e.attr != "").map(e => e.attr).take(maxNumMessages)
   }
 
-  def verify (graph: Graph[Color, _], maxNumColors: Long): Boolean =
+  def verify (graph : Graph[Color, _], maxNumColors : Long) : Boolean =
     findInvalidEdges(graph, maxNumColors).size == 0
 }
