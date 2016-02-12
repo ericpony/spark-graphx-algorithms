@@ -53,7 +53,12 @@ object GreedyMaximumMatching {
         }
         ret.toIterator
       },
-      (m1, m2) => if (m1._2 > m2._2) m1 else m2
+      (m1, m2) =>
+        if (m1._2 == m2._2) {
+          if (m1._1 > m2._1) m1 else m2
+        } else {
+          if (m1._2 > m2._2) m1 else m2
+        }
     ).mapVertices((_, state) => state._2)
   }
 }
