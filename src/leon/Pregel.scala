@@ -5,8 +5,12 @@ type VertexId = Int
 
 class PregelVerificationSkeleton[VD, ED, Message] (
   num_vertices : Int,
-  edge : (VertexId, VertexId) => Boolean) {
+  vAttr : VertexId => VD,
+  eAttr : (VertexId, VertexId) => ED,
+  edge : (VertexId, VertexId) => Boolean,
+  initial_message : Message) {
 
+  /* Graph properties */
   def isVertex (vid : VertexId) : Boolean = {
     1 <= vid && vid <= num_vertices
   }
@@ -19,26 +23,36 @@ class PregelVerificationSkeleton[VD, ED, Message] (
   // Get the attribute of vertex vid in the nth round
   def vAttr (n : Int, vid : VertexId) : VD = {
     require(isVertex(vid))
-    choose((attr : VD) => true)
+    if (n == 0) vAttr(vid)
+    else choose((attr : VD) => true)
   }
 
   // Get the attribute of the given edge in the nth round
   def eAttr (n : Int, src : VertexId, dst : VertexId) : ED = {
     require(edge(src, dst))
-    choose((attr : ED) => true)
+    if (n == 0) eAttr(src, dst)
+    else choose((attr : ED) => true)
   }
+  /* End of graph properties */
 
+  /* Helper functions */
   // Indicate whether a message is sent from src to dst in the nth round
   def activate[Message] (n : Int, src : VertexId, dst : VertexId) : Boolean = {
     require(edge(src, dst))
     choose((active : Boolean) => true)
   }
 
+  def isActive (n : Int, vid : VertexId) : Boolean = {
+    exists((other : VertexId) => activate(n, other, vid))
+  }
+
   def message[Message] (n : Int, src : VertexId, dst : VertexId) : Message = {
     require(edge(src, dst) && activate(n, src, dst))
     choose((msg : Message) => true)
   }
+  /* End of helper functions */
 
+  /* User-defined functions for Pregel */
   def sendMessage (n : Int, src : VertexId, dst : VertexId) : List[(VertexId, Message)] = {
     require(edge(src, dst))
     ???
@@ -54,31 +68,12 @@ class PregelVerificationSkeleton[VD, ED, Message] (
         (forall((msg : Message) => !list.contains((dst, msg)))) ==> !activate(n + 1, src, dst))
   }
 
-  // Define a total ordering on messages.
-  // Needed to assert merge functions such as min and max.
-  def ordering[Message] (m1 : Message, m2 : Message) : Boolean = ???
-
-  // Reasonable candidates of mergeMsg are: min, max, choose, and sum.
-  def mergeMsg_minmax[Message] (m1 : Message, m2 : Message) : Message = {
-    if (ordering(m1, m2)) m1 else m2
-  } ensuring (res => ordering(res, m1) && ordering(res, m2))
-
-  def mergeMsg_choose[Message] (m1 : Message, m2 : Message) : Message = {
-    m1 // or m2
-  } ensuring (res => res == m1 || res == m2)
-
-  def mergeMsg_sum (m1 : Int, m2 : Int) : Int = {
-    m1 + m2
-  }
-
   def mergeMsg[Message] (m1 : Message, m2 : Message) : Message = {
     ???
   }
 
   def vprog[Message] (n : Int, vid : VertexId, state : VD, msg : Message) : VD = {
-    require(exists((other : VertexId) => activate(n, other, vid)))
-
-    // This pre-condition is for merge functions such as sum
+    require(isActive(n, vid))
     require(/* isAssociative(mergeMsg) && isCommutative(mergeMsg) && */
       exists((acc : VertexId => Int) =>
         msg == acc(num_vertices) &&
@@ -88,34 +83,27 @@ class PregelVerificationSkeleton[VD, ED, Message] (
                 if (!activate(n, k, vid)) acc(k - 1)
                 else mergeMsg(acc(k - 1), message(n, k, vid)))))
           )))
-    // This pre-condition is a special case of the above condition
-    // when the merge function is min, max, etc.
-    require(forall((other : VertexId, other_msg : Message) =>
-      activate(n, other, vid) ==> ordering(msg, message(n, other, vid))))
     ???
-  } ensuring { res =>
-    vAttr(n + 1, vid) == res
-  }
-
-  val initial_message : Message = ???
-  val initial_vertex_state : VD = ???
+  } ensuring { res => vAttr(n + 1, vid) == res }
+  /* End of user-defined functions */
 
   def PregelLoop = {
-    require(forall((vid : VertexId) =>
-      message(0, vid, vid) == initial_message &&
-        vAttr(0, vid) == initial_vertex_state))
-    var n_iter = 0
-    while (exists((v1 : VertexId, v2 : VertexId) => activate(n_iter, v1, v2))) {
-      1 to num_vertices foreach (v1 =>
-        1 to num_vertices foreach (v2 =>
-          sendMessage(n_iter, v1, v2)))
+    require(forall((vid : VertexId) => activate(0, vid, vid)))
+    var num_iterations = 0
+    while (exists((vid : VertexId) => isActive(num_iterations, vid))) {
       1 to num_vertices foreach (dst => {
-        val messages = 1 to num_vertices filter (activate(n_iter, _, dst)) map (message(n_iter, _, dst))
-        if (messages.length > 0) {
-          vprog(n_iter, dst, vAttr(n_iter, dst), messages.reduce(mergeMsg))
+        if (num_iterations == 0) {
+          vprog(0, dst, vAttr(dst), initial_message)
+        } else {
+          val messages = 1 to num_vertices filter (activate(num_iterations, _, dst)) map (message(num_iterations, _, dst))
+          if (messages.nonEmpty) {
+            vprog(num_iterations, dst, vAttr(num_iterations, dst), messages.reduce(mergeMsg))
+          }
         }
       })
-      n_iter = n_iter + 1
+      0 to num_vertices * num_vertices - 1 foreach (vid =>
+        sendMessage(num_iterations, vid % num_vertices + 1, vid / num_vertices + 1))
+      num_iterations = num_iterations + 1
     }
   }
 
